@@ -1,0 +1,119 @@
+version: "3"
+services:
+  redis:
+    image: redis
+    restart: always
+    ports:
+      - "6380:6379"
+
+  authdb:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: user_details
+    ports:
+      - "5432:5432"
+    volumes:
+      - ../auth/database/data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  authmigration:
+    build: 
+      context: ../auth
+    depends_on:
+      - authdb
+    command: npx sequelize-cli db:migrate
+    environment:
+      DB_HOST: authdb
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: user_details
+  
+  authserver:
+    build: 
+      context: ../auth
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - authdb
+      - redis
+      - authmigration
+    ports:
+      - "8000:8000"
+    # volumes:
+    #   - ../auth:/app
+    environment:
+      DB_HOST: authdb
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: user_details
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      PORT: 8000
+      SECRET_KEY: secret
+
+  backenddb:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: CMS
+    ports:
+      - "5433:5432"
+    volumes:
+      - ../backend/database/data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backendmigration:
+    build: ../backend
+    depends_on:
+      - backenddb
+    command: npx sequelize-cli db:migrate
+    environment:
+      DB_HOST: backenddb
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: CMS
+
+  backendserver:
+    build: ../backend
+    restart: always
+    depends_on:
+      - backenddb
+      - backendmigration
+    ports:
+      - "8001:8001"
+
+    environment:
+      DB_HOST: backenddb
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: data
+      DB_PORT: 5433
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      PORT: 8001
+
+  # frontend:
+  #   build: ../frontend
+  #   restart: always
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - ./frontend:/app
+  #   environment:
+  #     PORT: 3000
+  #     REACT_APP_BACKEND_URL: http://localhost:8001
+  #     REACT_APP_AUTH_URL: http://localhost:8000
